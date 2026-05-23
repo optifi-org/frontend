@@ -5,7 +5,7 @@ use ipc::mock::MockBridge;
 #[cfg(windows)]
 use ipc::windows::WindowsBridge;
 
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
