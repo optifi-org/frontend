@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+@theme {
+  --color-cyber-bg: #0a0a0c;
+  --color-cyber-card: #121216;
+  --color-cyber-neon: #00f2ff;
+  --color-cyber-alert: #ff003c;
+  --color-cyber-dim: #1e1e24;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-cyber-bg);
+    color: white;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    overflow: hidden;
+    user-select: none;
+  }
+}
+
+.neon-glow {
+  box-shadow: 0 0 10px rgba(0, 242, 255, 0.4);
+}
+
+.alert-glow {
+  box-shadow: 0 0 10px rgba(255, 0, 60, 0.4);
+}
+
+.cyber-border {
+  border: 1px solid rgba(0, 242, 255, 0.1);
+}
