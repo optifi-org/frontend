@@ -1,18 +1,18 @@
 #![cfg(windows)]
 use async_trait::async_trait;
 use super::IpcBridge;
-use interprocess::os::windows::named_pipe::tokio::DuplexBytePipeStream;
+use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeClient};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 pub struct WindowsBridge {
-    stream: Option<BufReader<DuplexBytePipeStream>>,
+    reader: Option<BufReader<NamedPipeClient>>,
     path: String,
 }
 
 impl WindowsBridge {
     pub fn new(path: &str) -> Self {
         Self {
-            stream: None,
+            reader: None,
             path: path.to_string(),
         }
     }
@@ -21,23 +21,23 @@ impl WindowsBridge {
 #[async_trait]
 impl IpcBridge for WindowsBridge {
     async fn connect(&mut self) -> Result<(), String> {
-        let stream = DuplexBytePipeStream::connect(self.path.clone())
-            .await
+        let client = ClientOptions::new()
+            .open(&self.path)
             .map_err(|e| format!("Failed to connect to named pipe {}: {}", self.path, e))?;
         
-        self.stream = Some(BufReader::new(stream));
+        self.reader = Some(BufReader::new(client));
         Ok(())
     }
 
     async fn read_line(&mut self) -> Result<String, String> {
-        let reader = self.stream.as_mut().ok_or("Not connected")?;
+        let reader = self.reader.as_mut().ok_or("Not connected")?;
         let mut line = String::new();
         reader.read_line(&mut line).await.map_err(|e| e.to_string())?;
         Ok(line.trim().to_string())
     }
 
     async fn write_command(&mut self, cmd: &str) -> Result<(), String> {
-        let reader = self.stream.as_mut().ok_or("Not connected")?;
+        let reader = self.reader.as_mut().ok_or("Not connected")?;
         let stream = reader.get_mut();
         
         let formatted_cmd = if cmd.ends_with('\n') {
@@ -52,6 +52,6 @@ impl IpcBridge for WindowsBridge {
     }
 
     fn is_connected(&self) -> bool {
-        self.stream.is_some()
+        self.reader.is_some()
     }
 }
