@@ -1,11 +1,11 @@
 #![cfg(windows)]
 use async_trait::async_trait;
 use super::IpcBridge;
-use interprocess::os::windows::named_pipe::{pipe_mode, tokio::DuplexPipeStream};
+use interprocess::os::windows::named_pipe::tokio::DuplexBytePipeStream;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 pub struct WindowsBridge {
-    stream: Option<BufReader<DuplexPipeStream<pipe_mode::Bytes>>>,
+    stream: Option<BufReader<DuplexBytePipeStream>>,
     path: String,
 }
 
@@ -21,7 +21,7 @@ impl WindowsBridge {
 #[async_trait]
 impl IpcBridge for WindowsBridge {
     async fn connect(&mut self) -> Result<(), String> {
-        let stream = DuplexPipeStream::<pipe_mode::Bytes>::connect(self.path.clone())
+        let stream = DuplexBytePipeStream::connect(self.path.clone())
             .await
             .map_err(|e| format!("Failed to connect to named pipe {}: {}", self.path, e))?;
         
