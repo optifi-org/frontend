@@ -2357,7 +2357,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "optifi-ui"
+name = "optifi-frontend"
 version = "0.1.0"
 dependencies = [
  "async-trait",

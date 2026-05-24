@@ -26,6 +26,7 @@ impl IpcBridge for LinuxBridge {
             .await
             .map_err(|e| format!("Failed to connect to unix socket {}: {}", self.path, e))?;
         
+        println!("[IPC] LinuxBridge successfully connected to {}", self.path);
         self.reader = Some(BufReader::new(stream));
         Ok(())
     }
@@ -33,7 +34,10 @@ impl IpcBridge for LinuxBridge {
     async fn read_line(&mut self) -> Result<String, String> {
         let reader = self.reader.as_mut().ok_or("Not connected")?;
         let mut line = String::new();
-        reader.read_line(&mut line).await.map_err(|e| e.to_string())?;
+        let bytes = reader.read_line(&mut line).await.map_err(|e| e.to_string())?;
+        if bytes == 0 {
+            return Err("EOF".to_string());
+        }
         Ok(line.trim().to_string())
     }
 
