@@ -207,9 +207,9 @@ function MiniSparkline({ data, color = "#22d3ee" }: { data: number[]; color?: st
 
 function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) {
   useEffect(() => {
-    const t = setTimeout(onDismiss, 3500);
+    const t = setTimeout(onDismiss, 1000);
     return () => clearTimeout(t);
-  }, [onDismiss]);
+  }, []);
 
   const borderColor = toast.type === "success" ? "border-cyber-emerald/60" : toast.type === "warning" ? "border-amber-500/60" : "border-cyber-neon/60";
 
@@ -237,6 +237,7 @@ function App() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nextToastId = useRef(0);
   const connectedAt = useRef<number | null>(null);
+  const isConnectedRef = useRef(false);
 
   const buffer = useRef({ totalLatency: 0, totalBytes: 0, count: 0 });
   const ppsHistory = useRef<number[]>(Array(20).fill(0));
@@ -272,7 +273,8 @@ function App() {
     const connInterval = setInterval(async () => {
       try {
         const status = await invoke<boolean>("get_connection_status");
-        if (status !== isConnected) {
+        if (status !== isConnectedRef.current) {
+          isConnectedRef.current = status;
           setIsConnected(status);
           addLog(status ? "SYSTEM: IPC Link Established" : "SYSTEM: IPC Link Lost");
           addToast(status ? "Engine connected" : "Engine disconnected", status ? "success" : "warning");
