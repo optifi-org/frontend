@@ -434,40 +434,82 @@ function App() {
   );
 }
 
-function StatTile({ label, value, unit, color }: any) {
+function StatTile({ label, value, unit, color, sparkData, sparkColor, glowClass }: any) {
+  const formatted = formatVal(value, unit);
+  const thresholdColor = () => {
+    if (unit === "μs") return value > 5000 ? "text-red-400" : value > 2000 ? "text-amber-400" : color;
+    if ((unit === "TX" || unit === "RX") && value >= 1_048_576) return "text-cyber-violet";
+    if ((unit === "TX" || unit === "RX") && value >= 1024) return "text-amber-400";
+    return color;
+  };
   return (
-    <motion.div className="bg-white/[0.02] border border-white/10 rounded-lg p-5 transition-all shadow-sm">
-      <div className="text-[10px] font-bold opacity-40 mb-3 tracking-widest uppercase">{label}</div>
+    <motion.div
+      className={`bg-white/[0.02] border border-white/10 rounded-lg p-5 transition-all hover:bg-white/[0.04] hover:border-white/20 cursor-default group ${glowClass || ""}`}
+      whileHover={{ scale: 1.02 }}
+    >
+      <div className="text-[10px] font-bold opacity-40 mb-2 tracking-widest uppercase">{label}</div>
       <div className="flex items-baseline gap-2">
         <span className="text-3xl font-black tracking-tight"><AnimatedNumber value={value} /></span>
-        <span className={`text-xs font-bold ${color}`}>{unit}</span>
+        <span className={`text-xs font-bold ${thresholdColor()}`}>{formatted.display.split(" ").pop()}</span>
       </div>
+      {sparkData && <MiniSparkline data={sparkData} color={sparkColor} />}
     </motion.div>
   );
 }
 
 function StatusPanel({ icon, label, value, active }: any) {
   return (
-    <motion.div className={`border rounded-lg p-4 transition-colors ${active ? "bg-emerald-500/5 border-emerald-500/20" : "bg-white/2 border-white/10"}`}>
+    <motion.div
+      className={`border rounded-lg p-4 transition-all ${
+        active
+          ? "bg-emerald-500/5 border-emerald-500/20 emerald-glow"
+          : "bg-white/[0.02] border-white/10 hover:bg-white/[0.04] hover:border-white/15"
+      }`}
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+    >
       <div className="flex items-center gap-2 mb-2">
         <span className={active ? "text-emerald-400" : "text-white/35"}>{icon}</span>
         <span className="text-[10px] font-black uppercase tracking-widest text-white/45">{label}</span>
+        {active && (
+          <motion.span
+            className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-400 ripple-pulse"
+            animate={{ opacity: [0.4, 1, 0.4] }}
+            transition={{ duration: 2, repeat: Infinity }}
+          />
+        )}
       </div>
       <div className={`text-[11px] font-bold truncate ${active ? "text-white" : "text-white/60"}`}>{value}</div>
     </motion.div>
   );
 }
 
-function PresetCard({ active, onClick, icon, label, desc }: any) {
+function PresetCard({ active, onClick, icon, label, desc, shortcut }: any) {
   return (
-    <motion.div 
+    <motion.div
       whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={onClick}
-      className={`p-4 rounded-lg border cursor-pointer transition-colors shadow-sm ${active ? "bg-cyan-500/10 border-cyan-500/50 text-cyan-400" : "bg-white/2 border-white/5 opacity-60 hover:opacity-100"}`}
+      className={`p-4 rounded-lg border cursor-pointer transition-all relative ${
+        active
+          ? "bg-cyan-500/10 border-cyan-500/50 text-cyan-400 neon-glow"
+          : "bg-white/[0.02] border-white/5 opacity-60 hover:opacity-100 hover:border-white/15"
+      }`}
     >
+      {active && (
+        <motion.div
+          layoutId="preset-indicator"
+          className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 rounded-r bg-cyan-400"
+          transition={{ type: "spring", stiffness: 300, damping: 30 }}
+        />
+      )}
       <div className="flex items-center gap-3 mb-1">
         {icon}
         <span className="text-xs font-black tracking-tighter uppercase">{label}</span>
-        {active && <ChevronRight size={14} className="ml-auto" />}
+        {shortcut && (
+          <span className={`ml-auto text-[9px] font-mono px-1.5 py-0.5 rounded border ${
+            active ? "border-cyan-500/30 text-cyan-400/60" : "border-white/10 text-white/25"
+          }`}>{shortcut}</span>
+        )}
       </div>
       <p className={`text-[9px] ${active ? "opacity-80" : "opacity-50"}`}>{desc}</p>
     </motion.div>
@@ -476,7 +518,12 @@ function PresetCard({ active, onClick, icon, label, desc }: any) {
 
 function Badge({ label, active }: { label: string, active: boolean }) {
   return (
-    <motion.div className={`px-3 py-1 rounded text-[9px] font-black border transition-colors shadow-sm ${active ? "bg-cyan-500/10 border-cyan-500/50 text-cyan-400" : "bg-red-500/10 border-red-500/50 text-red-500"}`}>
+    <motion.div className={`px-3 py-1 rounded text-[9px] font-black border transition-all flex items-center gap-1.5 ${
+      active ? "bg-cyan-500/10 border-cyan-500/40 text-cyan-400 neon-glow" : "bg-red-500/10 border-red-500/40 text-red-500"
+    }`}>
+      {active && (
+        <motion.span className="w-1.5 h-1.5 rounded-full bg-cyan-400" animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 2, repeat: Infinity }} />
+      )}
       {label}: {active ? "ONLINE" : "OFFLINE"}
     </motion.div>
   );
