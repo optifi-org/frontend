@@ -2,12 +2,12 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
-  Zap, Activity, Wifi, Battery, ChevronRight, ChevronDown, ChevronUp,
-  Route, ShieldCheck, Radio, Globe2, Cpu, Clock
+  Zap, Activity, Battery, ChevronDown, ChevronUp,
+  Route, ShieldCheck, Radio, Cpu, Clock
 } from "lucide-react";
 import {
-  LineChart, Line, AreaChart, Area, ResponsiveContainer,
-  XAxis, YAxis, Tooltip, ReferenceDot, CartesianGrid
+  AreaChart, Area, ResponsiveContainer,
+  YAxis, Tooltip, ReferenceDot, CartesianGrid
 } from "recharts";
 import { motion, useSpring, useTransform, AnimatePresence } from "framer-motion";
 import "./App.css";
@@ -228,8 +228,6 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
 
 function App() {
   const [telemetry, setTelemetry] = useState<any[]>([]);
-  const [wifiList, setWifiList] = useState<string[]>([]);
-  const [isScanning, setIsScanning] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
   const [currentPreset, setCurrentPreset] = useState<Preset>("BALANCED");
@@ -293,8 +291,6 @@ function App() {
         unlistenRegistry.current.push(u1);
 
         const u2 = await listen<string[]>("wifi-list-event", (event) => {
-          setWifiList(event.payload);
-          setIsScanning(false);
           addLog(`WIFI: Scan complete, found ${event.payload.length} networks`);
           addToast(`Found ${event.payload.length} networks`, "success");
         });
@@ -355,18 +351,6 @@ function App() {
     return () => window.removeEventListener("keydown", handler);
   }, [changePreset]);
 
-  const triggerScan = useCallback(async () => {
-    setIsScanning(true);
-    setWifiList([]);
-    try {
-      await invoke("scan_wifi");
-      addLog("WIFI: Requesting airspace scan...");
-    } catch (err) {
-      setIsScanning(false);
-      addLog("ERROR: WiFi scan failed");
-    }
-  }, [addLog]);
-
   /* derived */
   const peakLatency = telemetry.length > 0 ? Math.max(...telemetry.map((d: any) => d.val)) : 0;
   const peakIdx = telemetry.length > 1 ? telemetry.reduce((maxI: number, d: any, i: number, arr: any[]) => d.val > arr[maxI].val ? i : maxI, 0) : -1;
@@ -422,21 +406,22 @@ function App() {
 
       <div className="relative z-10 grid grid-cols-4 gap-6 flex-1 min-h-0 px-6 pb-6">
         {/* LEFT COLUMN */}
-        <div className="col-span-3 flex flex-col gap-6 min-h-0">
+        <motion.div 
+          className="col-span-3 flex flex-col gap-6 min-h-0"
+          initial="hidden" animate="show"
+          variants={{ show: { transition: { staggerChildren: 0.05 } } }}
+        >
           <div className="grid grid-cols-4 gap-4">
-            <StatTile label="HOST TO ESP" value={bridgeStats.tx} unit="TX" color="text-cyan-400"
-              sparkData={sparklines.current.tx} sparkColor="#22d3ee" glowClass="neon-glow" />
-            <StatTile label="ESP TO HOST" value={bridgeStats.rx} unit="RX" color="text-emerald-400"
-              sparkData={sparklines.current.rx} sparkColor="#34d399" glowClass="emerald-glow" />
-            <StatTile label="USB CREDITS" value={bridgeStats.credits} unit="/32" color={bridgeStats.credits > 0 ? "text-emerald-400" : "text-red-400"} />
-            <StatTile label="LATENCY" value={stats.latency} unit="μs" color="text-violet-300"
-              sparkData={sparklines.current.latency} sparkColor="#a78bfa" glowClass="violet-glow" />
+            <motion.div variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}><StatTile label="HOST TO ESP" value={bridgeStats.tx} unit="TX" color="text-cyan-400" sparkData={sparklines.current.tx} sparkColor="#22d3ee" glowClass="neon-glow" /></motion.div>
+            <motion.div variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}><StatTile label="ESP TO HOST" value={bridgeStats.rx} unit="RX" color="text-emerald-400" sparkData={sparklines.current.rx} sparkColor="#34d399" glowClass="emerald-glow" /></motion.div>
+            <motion.div variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}><StatTile label="USB CREDITS" value={bridgeStats.credits} unit="/32" color={bridgeStats.credits > 0 ? "text-emerald-400" : "text-red-400"} /></motion.div>
+            <motion.div variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}><StatTile label="LATENCY" value={stats.latency} unit="μs" color="text-violet-300" sparkData={sparklines.current.latency} sparkColor="#a78bfa" glowClass="violet-glow" /></motion.div>
           </div>
 
           <div className="grid grid-cols-3 gap-4">
-            <StatusPanel icon={<Route size={18} />} label="Internal Path" value="10.137.137.1 -> 10.137.137.2" active={isConnected} />
-            <StatusPanel icon={<ShieldCheck size={18} />} label="NAT State" value={bridgeStats.rx > 0 ? "MASQUERADE ACTIVE" : "WAITING FOR TRAFFIC"} active={bridgeStats.rx > 0} />
-            <StatusPanel icon={<Cpu size={18} />} label="Packet Freq" value={`${stats.pps} PPS`} active={stats.pps > 0} />
+            <motion.div variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}><StatusPanel icon={<Route size={18} />} label="Internal Path" value="10.137.137.1 -> 10.137.137.2" active={isConnected} /></motion.div>
+            <motion.div variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}><StatusPanel icon={<ShieldCheck size={18} />} label="NAT State" value={bridgeStats.rx > 0 ? "MASQUERADE ACTIVE" : "WAITING FOR TRAFFIC"} active={bridgeStats.rx > 0} /></motion.div>
+            <motion.div variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}><StatusPanel icon={<Cpu size={18} />} label="Packet Freq" value={`${stats.pps} PPS`} active={stats.pps > 0} /></motion.div>
           </div>
 
           {/* CHART */}
@@ -467,7 +452,7 @@ function App() {
                     <YAxis hide domain={[0, 'auto']} />
                     <Tooltip
                       contentStyle={{ background: "#111216", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 11, fontFamily: "var(--font-mono)" }}
-                      formatter={(v: number) => [`${v} μs`, "Latency"]}
+                      formatter={(v: any) => [`${v} μs`, "Latency"]}
                     />
                     <Area type="monotone" dataKey="val" stroke="#22d3ee" strokeWidth={2.5} fill="url(#latencyGrad)" dot={false} isAnimationActive={false} />
                     {peakIdx >= 0 && telemetry[peakIdx]?.val > 0 && (
@@ -477,23 +462,27 @@ function App() {
                 </ResponsiveContainer>
             </div>
           </motion.div>
-        </div>
+        </motion.div>
 
         {/* RIGHT COLUMN */}
-        <div className="col-span-1 flex flex-col gap-4 min-h-0">
-          <h2 className="text-[10px] font-black opacity-30 uppercase tracking-[0.2em] mb-2">Driver Presets</h2>
-          <PresetCard active={currentPreset === "PERFORMANCE"} onClick={() => changePreset("PERFORMANCE")} icon={<Zap size={16}/>} label="PERFORMANCE" desc="Zero lag / High Power" shortcut="1" />
-          <PresetCard active={currentPreset === "BALANCED"} onClick={() => changePreset("BALANCED")} icon={<Activity size={16}/>} label="BALANCED" desc="Standard mode" shortcut="2" />
-          <PresetCard active={currentPreset === "BATTERY"} onClick={() => changePreset("BATTERY")} icon={<Battery size={16}/>} label="BATTERY" desc="Power Efficient" shortcut="3" />
+        <motion.div 
+          className="col-span-1 flex flex-col gap-4 min-h-0"
+          initial="hidden" animate="show"
+          variants={{ show: { transition: { staggerChildren: 0.1, delayChildren: 0.3 } } }}
+        >
+          <motion.h2 variants={{ hidden: { opacity: 0, x: 20 }, show: { opacity: 1, x: 0 } }} className="text-[10px] font-black opacity-30 uppercase tracking-[0.2em] mb-2">Driver Presets</motion.h2>
+          <motion.div variants={{ hidden: { opacity: 0, x: 20 }, show: { opacity: 1, x: 0 } }}><PresetCard active={currentPreset === "PERFORMANCE"} onClick={() => changePreset("PERFORMANCE")} icon={<Zap size={16}/>} label="PERFORMANCE" desc="Zero lag / High Power" shortcut="1" /></motion.div>
+          <motion.div variants={{ hidden: { opacity: 0, x: 20 }, show: { opacity: 1, x: 0 } }}><PresetCard active={currentPreset === "BALANCED"} onClick={() => changePreset("BALANCED")} icon={<Activity size={16}/>} label="BALANCED" desc="Standard mode" shortcut="2" /></motion.div>
+          <motion.div variants={{ hidden: { opacity: 0, x: 20 }, show: { opacity: 1, x: 0 } }}><PresetCard active={currentPreset === "BATTERY"} onClick={() => changePreset("BATTERY")} icon={<Battery size={16}/>} label="BATTERY" desc="Power Efficient" shortcut="3" /></motion.div>
 
           {/* USB Credits Arc Gauge */}
-          <div className="bg-white/[0.02] border border-white/10 rounded-lg p-4 flex flex-col items-center">
+          <motion.div variants={{ hidden: { opacity: 0, x: 20 }, show: { opacity: 1, x: 0 } }} className="bg-white/[0.02] border border-white/10 rounded-lg p-4 flex flex-col items-center">
             <div className="text-[10px] font-bold opacity-40 mb-2 tracking-widest uppercase">USB Credits</div>
             <ArcGauge value={bridgeStats.credits} />
-          </div>
+          </motion.div>
 
           {/* Event Log */}
-          <div className="mt-2 flex flex-col gap-2">
+          <motion.div variants={{ hidden: { opacity: 0, x: 20 }, show: { opacity: 1, x: 0 } }} className="mt-2 flex flex-col gap-2">
             <button onClick={() => setShowEventLog(prev => !prev)} className="flex items-center gap-2 group cursor-pointer">
               <h2 className="text-[10px] font-black opacity-30 uppercase tracking-[0.2em] group-hover:opacity-60 transition-opacity">Event Log</h2>
               <span className="text-[8px] text-white/20 ml-auto font-mono border border-white/10 rounded px-1 py-0.5">L</span>
@@ -549,10 +538,10 @@ function App() {
                 </AnimatePresence>
               </div>
             )}
-          </div>
+          </motion.div>
 
           {/* Live Path Info */}
-          <motion.div className="mt-auto p-4 bg-gradient-to-br from-white/[0.05] to-white/[0.01] border border-white/10 rounded-lg shadow-lg">
+          <motion.div variants={{ hidden: { opacity: 0, x: 20 }, show: { opacity: 1, x: 0 } }} className="mt-auto p-4 bg-gradient-to-br from-white/[0.05] to-white/[0.01] border border-white/10 rounded-lg shadow-lg">
             <div className="flex items-center gap-2 mb-2 text-cyan-400">
               <Radio size={14} className="animate-pulse" />
               <span className="text-[10px] font-black uppercase tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-emerald-400">Live Path</span>
@@ -561,7 +550,7 @@ function App() {
               TCP/UDP/ICMP traffic flowing through optifi0 &rarr; USB &rarr; ESP32 NAT &rarr; Internet.
             </p>
           </motion.div>
-        </div>
+        </motion.div>
       </div>
     </div>
   );
