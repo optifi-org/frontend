@@ -1,31 +1,139 @@
 @import "tailwindcss";
 
 @theme {
-  --color-cyber-bg: #0a0a0c;
-  --color-cyber-card: #121216;
-  --color-cyber-neon: #00f2ff;
-  --color-cyber-alert: #ff003c;
-  --color-cyber-dim: #1e1e24;
+  --color-cyber-950: #06060a;
+  --color-cyber-900: #0d0d14;
+  --color-cyber-800: #1a1a2e;
+  --color-cyber-700: #2a2a40;
+  --color-cyber-600: #3d3d5c;
+  --color-cyber-500: #6b7280;
+  --color-cyber-400: #9ca3af;
+  --color-cyber-300: #d1d5db;
+  --color-cyber-neon: #22d3ee;
+  --color-cyber-alert: #f87171;
+  --color-cyber-emerald: #34d399;
+  --color-cyber-violet: #a78bfa;
+  --color-cyber-surface: #111119;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 
-@layer base {
-  body {
-    background-color: var(--color-cyber-bg);
-    color: white;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-    overflow: hidden;
-    user-select: none;
-  }
+body {
+  margin: 0;
+  background: var(--color-cyber-950);
+  font-family: var(--font-sans);
+  overflow: hidden;
 }
 
+/* ── animated grid background ───────────────────────────── */
+.grid-bg {
+  background-image:
+    linear-gradient(rgba(34, 211, 238, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 211, 238, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+  animation: grid-drift 20s linear infinite;
+}
+
+@keyframes grid-drift {
+  0% { background-position: 0 0; }
+  100% { background-position: 40px 40px; }
+}
+
+/* ── dot pattern overlay ────────────────────────────────── */
+.dot-pattern {
+  background-image: radial-gradient(rgba(34, 211, 238, 0.06) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* ── glow utilities ─────────────────────────────────────── */
 .neon-glow {
-  box-shadow: 0 0 10px rgba(0, 242, 255, 0.4);
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.25), 0 0 24px rgba(34, 211, 238, 0.08);
+}
+
+.neon-glow-strong {
+  box-shadow: 0 0 20px rgba(34, 211, 238, 0.4), 0 0 40px rgba(34, 211, 238, 0.15);
+}
+
+.emerald-glow {
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.4), 0 0 16px rgba(52, 211, 153, 0.1);
+}
+
+.violet-glow {
+  box-shadow: 0 0 12px rgba(167, 139, 250, 0.3), 0 0 24px rgba(167, 139, 250, 0.1);
 }
 
 .alert-glow {
-  box-shadow: 0 0 10px rgba(255, 0, 60, 0.4);
+  box-shadow: 0 0 15px rgba(248, 113, 113, 0.3), 0 0 30px rgba(248, 113, 113, 0.1);
 }
 
-.cyber-border {
-  border: 1px solid rgba(0, 242, 255, 0.1);
+/* ── radar sweep for connection screen ──────────────────── */
+.radar-sweep::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: conic-gradient(from 0deg, transparent 0deg, rgba(34, 211, 238, 0.15) 60deg, transparent 120deg);
+  animation: sweep 3s linear infinite;
+}
+
+@keyframes sweep {
+  to { transform: rotate(360deg); }
+}
+
+/* ── scanline overlay (cyberpunk horizontal sweep) ──────── */
+.scanline::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(34, 211, 238, 0.015) 50%,
+    transparent 100%
+  );
+  background-size: 100% 8px;
+  animation: scanline-move 8s linear infinite;
+  z-index: 1;
+}
+
+@keyframes scanline-move {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+/* ── status indicator ripple ────────────────────────────── */
+@keyframes ripple {
+  0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.4); }
+  70% { box-shadow: 0 0 0 6px rgba(52, 211, 153, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+}
+
+.ripple-pulse {
+  animation: ripple 2s ease-out infinite;
+}
+
+/* ── critical pulse for arc gauge ───────────────────────── */
+@keyframes critical-pulse {
+  0%, 100% { filter: drop-shadow(0 0 4px rgba(248, 113, 113, 0.3)); }
+  50% { filter: drop-shadow(0 0 12px rgba(248, 113, 113, 0.6)); }
+}
+
+.critical-pulse {
+  animation: critical-pulse 1.5s ease-in-out infinite;
+}
+
+/* ── custom scrollbar ───────────────────────────────────── */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #2a2a40;
+  border-radius: 2px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #3d3d5c;
 }
