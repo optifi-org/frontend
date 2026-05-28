@@ -235,28 +235,54 @@ function App() {
   const [currentPreset, setCurrentPreset] = useState<Preset>("BALANCED");
   const [stats, setStats] = useState({ latency: 0, pps: 0 });
   const [bridgeStats, setBridgeStats] = useState<BridgeStats>({ tx: 0, rx: 0, credits: 0 });
-  
+  const [showEventLog, setShowEventLog] = useState(false);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const nextToastId = useRef(0);
+  const connectedAt = useRef<number | null>(null);
+
   const buffer = useRef({ totalLatency: 0, totalBytes: 0, count: 0 });
   const ppsHistory = useRef<number[]>(Array(20).fill(0));
   const unlistenRegistry = useRef<Array<() => void>>([]);
+  const sparklines = useRef({ tx: [] as number[], rx: [] as number[], latency: [] as number[], pps: [] as number[] });
 
-  const addLog = (msg: string) => {
+  /* toast helpers */
+  const addToast = useCallback((message: string, type: Toast["type"] = "info") => {
+    const id = nextToastId.current++;
+    setToasts((prev) => [...prev, { id, message, type }]);
+  }, []);
+
+  const dismissToast = useCallback((id: number) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const addLog = useCallback((msg: string) => {
     setLogs(prev => [msg, ...prev].slice(0, 50));
-  };
+  }, []);
 
+  /* preset */
+  const changePreset = useCallback(async (p: Preset) => {
+    try {
+      await invoke("set_preset", { preset: p });
+      setCurrentPreset(p);
+      addLog(`PRESET: Changed to ${p}`);
+      addToast(`Preset: ${p}`, "success");
+    } catch (err) { addLog("ERROR: Failed to set preset"); }
+  }, [addLog, addToast]);
+
+  /* engine IPC */
   useEffect(() => {
-    // 1. Connection check loop
     const connInterval = setInterval(async () => {
       try {
         const status = await invoke<boolean>("get_connection_status");
         if (status !== isConnected) {
           setIsConnected(status);
           addLog(status ? "SYSTEM: IPC Link Established" : "SYSTEM: IPC Link Lost");
+          addToast(status ? "Engine connected" : "Engine disconnected", status ? "success" : "warning");
+          connectedAt.current = status ? Date.now() : null;
         }
       } catch (err) { setIsConnected(false); }
     }, 2000);
 
-    // 2. Setup Telemetry Listener
     const setupListeners = async () => {
       try {
         const u1 = await listen<TelemetryData>("telemetry-event", (event) => {
@@ -270,6 +296,7 @@ function App() {
           setWifiList(event.payload);
           setIsScanning(false);
           addLog(`WIFI: Scan complete, found ${event.payload.length} networks`);
+          addToast(`Found ${event.payload.length} networks`, "success");
         });
         unlistenRegistry.current.push(u2);
 
@@ -283,18 +310,25 @@ function App() {
     };
     setupListeners();
 
-    // 3. UI Sync Loop (20Hz)
+    // UI Sync Loop (20Hz)
     const uiInterval = setInterval(() => {
       const { totalLatency, count } = buffer.current;
       const avgLat = count > 0 ? Math.round(totalLatency / count) : 0;
-      
+
       ppsHistory.current.push(count);
       if (ppsHistory.current.length > 20) ppsHistory.current.shift();
       const rollingPps = ppsHistory.current.reduce((a, b) => a + b, 0);
-      
+
       setStats({ latency: avgLat, pps: rollingPps });
-      setTelemetry(prev => [...prev, { val: avgLat === 0 && prev.length > 0 ? prev[prev.length-1].val : avgLat }].slice(-100)); 
-      
+      setTelemetry(prev => [...prev, { val: avgLat === 0 && prev.length > 0 ? prev[prev.length-1].val : avgLat }].slice(-100));
+
+      // sparkline buffers
+      const push = (arr: number[], v: number) => { arr.push(v); if (arr.length > 20) arr.shift(); };
+      push(sparklines.current.latency, avgLat);
+      push(sparklines.current.pps, rollingPps);
+      push(sparklines.current.tx, bridgeStats.tx);
+      push(sparklines.current.rx, bridgeStats.rx);
+
       buffer.current = { totalLatency: 0, totalBytes: 0, count: 0 };
     }, 50);
 
@@ -306,30 +340,61 @@ function App() {
     };
   }, []);
 
-  const changePreset = async (p: Preset) => {
-    try {
-      await invoke("set_preset", { preset: p });
-      setCurrentPreset(p);
-      addLog(`PRESET: Changed to ${p}`);
-    } catch (err) { addLog("ERROR: Failed to set preset"); }
-  };
+  /* keyboard shortcuts */
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement) return;
+      if (SHORTCUT_KEYS[e.key]) {
+        changePreset(SHORTCUT_KEYS[e.key]);
+      }
+      if (e.key === "l" || e.key === "L") {
+        setShowEventLog(prev => !prev);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [changePreset]);
 
-  const triggerScan = async () => {
+  const triggerScan = useCallback(async () => {
     setIsScanning(true);
     setWifiList([]);
     try {
       await invoke("scan_wifi");
       addLog("WIFI: Requesting airspace scan...");
-    } catch (err) { 
+    } catch (err) {
       setIsScanning(false);
       addLog("ERROR: WiFi scan failed");
     }
-  };
+  }, [addLog]);
+
+  /* derived */
+  const peakLatency = telemetry.length > 0 ? Math.max(...telemetry.map((d: any) => d.val)) : 0;
+  const peakIdx = telemetry.length > 1 ? telemetry.reduce((maxI: number, d: any, i: number, arr: any[]) => d.val > arr[maxI].val ? i : maxI, 0) : -1;
+  const avgLatency = telemetry.length > 0 ? Math.round(telemetry.reduce((s: number, d: any) => s + d.val, 0) / telemetry.length) : 0;
+  const minLatency = telemetry.length > 0 ? Math.min(...telemetry.map((d: any) => d.val)) : 0;
 
   return (
-    <div className="min-h-screen bg-[#0a0a0c] text-white font-mono p-6 select-none flex flex-col overflow-hidden">
+    <div className="min-h-screen bg-cyber-950 text-white font-sans select-none flex flex-col overflow-hidden relative">
+      <div className="grid-bg fixed inset-0 pointer-events-none" />
+      <div className="dot-pattern fixed inset-0 pointer-events-none" />
+      <div className="scanline fixed inset-0 pointer-events-none" />
+
+      {/* connection screen */}
+      <AnimatePresence>
+        {!isConnected && <ConnectionScreen />}
+      </AnimatePresence>
+
+      {/* toast container */}
+      <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 items-end">
+        <AnimatePresence>
+          {toasts.map((t) => (
+            <ToastItem key={t.id} toast={t} onDismiss={() => dismissToast(t.id)} />
+          ))}
+        </AnimatePresence>
+      </div>
+
       {/* HEADER */}
-      <div className="flex justify-between items-center mb-6 border-b border-white/10 pb-4">
+      <div className="relative z-10 flex justify-between items-center mb-6 border-b border-white/10 pb-4 px-6 pt-6">
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-3">
             <motion.div animate={{ opacity: isConnected ? [0.5, 1, 0.5] : 1 }} transition={{ repeat: Infinity, duration: 2 }}>
@@ -343,22 +408,29 @@ function App() {
             <Badge label="NAT" active={isConnected && bridgeStats.rx > 0} />
           </div>
         </div>
-        <div className="text-right">
-           <p className={`text-[10px] uppercase tracking-widest font-bold ${isConnected ? "text-emerald-400" : "text-red-500"}`}>
-             {isConnected ? "Engine Link Active" : "Searching for Engine..."}
-           </p>
-           <p className="text-xs font-bold text-cyan-400 opacity-60">optifi0 (10.137.137.1)</p>
+        <div className="flex items-center gap-4">
+          <RealtimeClock />
+          <UptimeCounter connectedAt={connectedAt.current} />
+          <div className="text-right">
+            <p className={`text-[10px] uppercase tracking-widest font-bold ${isConnected ? "text-emerald-400" : "text-red-500"}`}>
+              {isConnected ? "Engine Link Active" : "Searching for Engine..."}
+            </p>
+            <p className="text-xs font-bold text-cyan-400 opacity-60">optifi0 (10.137.137.1)</p>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-6 flex-1 min-h-0">
+      <div className="relative z-10 grid grid-cols-4 gap-6 flex-1 min-h-0 px-6 pb-6">
         {/* LEFT COLUMN */}
         <div className="col-span-3 flex flex-col gap-6 min-h-0">
           <div className="grid grid-cols-4 gap-4">
-            <StatTile label="HOST TO ESP" value={bridgeStats.tx} unit="TX" color="text-cyan-400" />
-            <StatTile label="ESP TO HOST" value={bridgeStats.rx} unit="RX" color="text-emerald-400" />
+            <StatTile label="HOST TO ESP" value={bridgeStats.tx} unit="TX" color="text-cyan-400"
+              sparkData={sparklines.current.tx} sparkColor="#22d3ee" glowClass="neon-glow" />
+            <StatTile label="ESP TO HOST" value={bridgeStats.rx} unit="RX" color="text-emerald-400"
+              sparkData={sparklines.current.rx} sparkColor="#34d399" glowClass="emerald-glow" />
             <StatTile label="USB CREDITS" value={bridgeStats.credits} unit="/32" color={bridgeStats.credits > 0 ? "text-emerald-400" : "text-red-400"} />
-            <StatTile label="LATENCY" value={stats.latency} unit="μs" color="text-violet-300" />
+            <StatTile label="LATENCY" value={stats.latency} unit="μs" color="text-violet-300"
+              sparkData={sparklines.current.latency} sparkColor="#a78bfa" glowClass="violet-glow" />
           </div>
 
           <div className="grid grid-cols-3 gap-4">
@@ -367,16 +439,41 @@ function App() {
             <StatusPanel icon={<Cpu size={18} />} label="Packet Freq" value={`${stats.pps} PPS`} active={stats.pps > 0} />
           </div>
 
+          {/* CHART */}
           <motion.div className="bg-white/[0.02] border border-white/5 rounded-lg p-6 flex-1 flex flex-col min-h-0 relative overflow-hidden">
-            <h2 className="text-xs font-bold opacity-30 mb-6 uppercase tracking-[0.2em] relative z-10">Real-time Bridge Latency</h2>
+            <div className="flex items-center justify-between mb-4 relative z-10">
+              <h2 className="text-xs font-bold opacity-30 uppercase tracking-[0.2em]">Real-time Bridge Latency</h2>
+              <div className="flex items-center gap-4">
+                {telemetry.length > 0 && (
+                  <>
+                    <span className="text-[9px] font-mono text-cyber-emerald/60">MIN: {minLatency}μs</span>
+                    <span className="text-[9px] font-mono text-cyber-400/60">AVG: {avgLatency}μs</span>
+                    <span className="text-[9px] font-mono text-cyber-violet/60">PEAK: {peakLatency}μs</span>
+                  </>
+                )}
+              </div>
+            </div>
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3/4 h-1/2 bg-cyan-500/5 blur-[100px] pointer-events-none" />
             <div className="flex-1 min-h-[260px] relative z-10">
                 <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={telemetry}>
+                <AreaChart data={telemetry}>
+                    <defs>
+                      <linearGradient id="latencyGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#22d3ee" stopOpacity={0.2} />
+                        <stop offset="100%" stopColor="#22d3ee" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" horizontal={true} vertical={false} />
                     <YAxis hide domain={[0, 'auto']} />
-                    <Tooltip contentStyle={{ background: "#111216", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8 }} />
-                    <Line type="monotone" dataKey="val" stroke="#22d3ee" strokeWidth={3} dot={false} isAnimationActive={false} />
-                </LineChart>
+                    <Tooltip
+                      contentStyle={{ background: "#111216", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 11, fontFamily: "var(--font-mono)" }}
+                      formatter={(v: number) => [`${v} μs`, "Latency"]}
+                    />
+                    <Area type="monotone" dataKey="val" stroke="#22d3ee" strokeWidth={2.5} fill="url(#latencyGrad)" dot={false} isAnimationActive={false} />
+                    {peakIdx >= 0 && telemetry[peakIdx]?.val > 0 && (
+                      <ReferenceDot x={peakIdx} y={telemetry[peakIdx].val} r={4} fill="#a78bfa" stroke="#a78bfa" strokeWidth={2} />
+                    )}
+                </AreaChart>
                 </ResponsiveContainer>
             </div>
           </motion.div>
@@ -385,40 +482,76 @@ function App() {
         {/* RIGHT COLUMN */}
         <div className="col-span-1 flex flex-col gap-4 min-h-0">
           <h2 className="text-[10px] font-black opacity-30 uppercase tracking-[0.2em] mb-2">Driver Presets</h2>
-          <PresetCard active={currentPreset === "PERFORMANCE"} onClick={() => changePreset("PERFORMANCE")} icon={<Zap size={16}/>} label="PERFORMANCE" desc="Zero lag / High Power" />
-          <PresetCard active={currentPreset === "BALANCED"} onClick={() => changePreset("BALANCED")} icon={<Activity size={16}/>} label="BALANCED" desc="Standard mode" />
-          <PresetCard active={currentPreset === "BATTERY"} onClick={() => changePreset("BATTERY")} icon={<Battery size={16}/>} label="BATTERY" desc="Power Efficient" />
-          
-          <div className="mt-2 flex flex-col gap-2">
-            <h2 className="text-[10px] font-black opacity-30 uppercase tracking-[0.2em]">System Status</h2>
-            <div className="bg-black/40 border border-white/5 rounded-lg p-3 flex items-center overflow-hidden relative">
-               <AnimatePresence mode="wait">
-                 <motion.div 
-                   key={logs[0] || "waiting"}
-                   initial={{ opacity: 0, y: 5 }}
-                   animate={{ opacity: 1, y: 0 }}
-                   exit={{ opacity: 0, y: -5 }}
-                   transition={{ duration: 0.2 }}
-                   className="font-mono text-[10px] flex items-center gap-3 w-full"
-                 >
-                   {logs.length === 0 ? (
-                     <span className="opacity-30 italic">Waiting for events...</span>
-                   ) : (
-                     <>
-                       <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shrink-0" />
-                       <span className={`truncate ${logs[0].includes("ERROR") ? "text-red-400" : logs[0].includes("SYSTEM") ? "text-cyan-400" : "text-white/80"}`}>
-                         {logs[0]}
-                       </span>
-                       <span className="ml-auto opacity-20 text-[8px] shrink-0">
-                         {new Date().toLocaleTimeString()}
-                       </span>
-                     </>
-                   )}
-                 </motion.div>
-               </AnimatePresence>
-            </div>
+          <PresetCard active={currentPreset === "PERFORMANCE"} onClick={() => changePreset("PERFORMANCE")} icon={<Zap size={16}/>} label="PERFORMANCE" desc="Zero lag / High Power" shortcut="1" />
+          <PresetCard active={currentPreset === "BALANCED"} onClick={() => changePreset("BALANCED")} icon={<Activity size={16}/>} label="BALANCED" desc="Standard mode" shortcut="2" />
+          <PresetCard active={currentPreset === "BATTERY"} onClick={() => changePreset("BATTERY")} icon={<Battery size={16}/>} label="BATTERY" desc="Power Efficient" shortcut="3" />
+
+          {/* USB Credits Arc Gauge */}
+          <div className="bg-white/[0.02] border border-white/10 rounded-lg p-4 flex flex-col items-center">
+            <div className="text-[10px] font-bold opacity-40 mb-2 tracking-widest uppercase">USB Credits</div>
+            <ArcGauge value={bridgeStats.credits} />
           </div>
 
+          {/* Event Log */}
+          <div className="mt-2 flex flex-col gap-2">
+            <button onClick={() => setShowEventLog(prev => !prev)} className="flex items-center gap-2 group cursor-pointer">
+              <h2 className="text-[10px] font-black opacity-30 uppercase tracking-[0.2em] group-hover:opacity-60 transition-opacity">Event Log</h2>
+              <span className="text-[8px] text-white/20 ml-auto font-mono border border-white/10 rounded px-1 py-0.5">L</span>
+              {showEventLog ? <ChevronDown size={10} className="text-white/30" /> : <ChevronUp size={10} className="text-white/30" />}
+            </button>
+            <AnimatePresence>
+              {showEventLog && (
+                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.25 }} className="overflow-hidden">
+                  <div className="bg-black/40 border border-white/5 rounded-lg p-2 max-h-[180px] overflow-y-auto custom-scrollbar">
+                    {logs.length === 0 ? (
+                      <span className="text-[10px] opacity-30 italic p-2">No events yet</span>
+                    ) : (
+                      logs.map((log, i) => (
+                        <div key={i} className={`text-[10px] font-mono py-1 px-2 flex items-start gap-2 ${i === 0 ? '' : 'border-t border-white/[0.03]'}`}>
+                          <span className={`shrink-0 ${
+                            log.includes("ERROR") ? "text-red-400" :
+                            log.includes("SYSTEM") ? "text-cyan-400" :
+                            log.includes("PRESET") ? "text-violet-400" :
+                            log.includes("WIFI") ? "text-emerald-400" : "text-white/50"
+                          }`}>{log}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            {!showEventLog && (
+              <div className="bg-black/40 border border-white/5 rounded-lg p-3 flex items-center overflow-hidden relative">
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={logs[0] || "waiting"}
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -5 }}
+                    transition={{ duration: 0.2 }}
+                    className="font-mono text-[10px] flex items-center gap-3 w-full"
+                  >
+                    {logs.length === 0 ? (
+                      <span className="opacity-30 italic">Waiting for events...</span>
+                    ) : (
+                      <>
+                        <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shrink-0" />
+                        <span className={`truncate ${logs[0].includes("ERROR") ? "text-red-400" : logs[0].includes("SYSTEM") ? "text-cyan-400" : "text-white/80"}`}>
+                          {logs[0]}
+                        </span>
+                        <span className="ml-auto opacity-20 text-[8px] shrink-0">
+                          {new Date().toLocaleTimeString()}
+                        </span>
+                      </>
+                    )}
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+            )}
+          </div>
+
+          {/* Live Path Info */}
           <motion.div className="mt-auto p-4 bg-gradient-to-br from-white/[0.05] to-white/[0.01] border border-white/10 rounded-lg shadow-lg">
             <div className="flex items-center gap-2 mb-2 text-cyan-400">
               <Radio size={14} className="animate-pulse" />
