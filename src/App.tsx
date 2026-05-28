@@ -1,8 +1,14 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Zap, Activity, Wifi, Battery, ChevronRight, Route, ShieldCheck, Radio, Globe2, Cpu } from "lucide-react";
-import { LineChart, Line, ResponsiveContainer, YAxis, Tooltip } from "recharts";
+import {
+  Zap, Activity, Wifi, Battery, ChevronRight, ChevronDown, ChevronUp,
+  Route, ShieldCheck, Radio, Globe2, Cpu, Clock
+} from "lucide-react";
+import {
+  LineChart, Line, AreaChart, Area, ResponsiveContainer,
+  XAxis, YAxis, Tooltip, ReferenceDot, CartesianGrid
+} from "recharts";
 import { motion, useSpring, useTransform, AnimatePresence } from "framer-motion";
 import "./App.css";
 
@@ -19,11 +25,205 @@ interface BridgeStats {
 
 type Preset = "PERFORMANCE" | "BALANCED" | "BATTERY";
 
+interface Toast {
+  id: number;
+  message: string;
+  type: "info" | "success" | "warning";
+}
+
+const SHORTCUT_KEYS: Record<string, Preset> = { "1": "PERFORMANCE", "2": "BALANCED", "3": "BATTERY" };
+
+/* ── helpers ───────────────────────────────────────────── */
+function formatVal(v: number, unit: string): { display: string; color: string } {
+  if (unit === "μs") {
+    if (v >= 1000) return { display: `${(v / 1000).toFixed(1)} ms`, color: v > 5000 ? "text-cyber-alert" : "text-amber-400" };
+    return { display: `${v.toFixed(0)} μs`, color: v < 200 ? "text-cyber-emerald" : "text-white" };
+  }
+  if (unit === "TX" || unit === "RX") {
+    if (v >= 1_048_576) return { display: `${(v / 1_048_576).toFixed(1)} MB`, color: "text-cyber-violet" };
+    if (v >= 1024) return { display: `${(v / 1024).toFixed(1)} KB`, color: "text-white" };
+    return { display: `${v.toFixed(0)} B`, color: v > 0 ? "text-cyber-400" : "text-cyber-600" };
+  }
+  return { display: `${v.toFixed(0)} ${unit}`, color: "text-white" };
+}
+
+/* ── sub-components ────────────────────────────────────── */
+
 function AnimatedNumber({ value }: { value: number }) {
   const spring = useSpring(value, { mass: 0.5, stiffness: 100, damping: 20 });
   useEffect(() => { spring.set(value); }, [value, spring]);
   const display = useTransform(spring, (v) => Math.round(v).toLocaleString());
   return <motion.span>{display}</motion.span>;
+}
+
+function RealtimeClock() {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div className="flex items-center gap-1.5 text-xs text-cyber-400 font-mono">
+      <Clock size={12} />
+      <span>{now.toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+      <span className="text-cyber-500">|</span>
+      <span>{now.toLocaleTimeString("en-US", { hour12: false })}</span>
+    </div>
+  );
+}
+
+function UptimeCounter({ connectedAt }: { connectedAt: number | null }) {
+  const [elapsed, setElapsed] = useState("00:00:00");
+  useEffect(() => {
+    if (!connectedAt) { setElapsed("00:00:00"); return; }
+    const id = setInterval(() => {
+      const diff = Math.floor((Date.now() - connectedAt) / 1000);
+      const h = String(Math.floor(diff / 3600)).padStart(2, "0");
+      const m = String(Math.floor((diff % 3600) / 60)).padStart(2, "0");
+      const s = String(diff % 60).padStart(2, "0");
+      setElapsed(`${h}:${m}:${s}`);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [connectedAt]);
+  return (
+    <span className="text-[10px] font-mono text-cyber-500 tabular-nums">
+      ▲ {elapsed}
+    </span>
+  );
+}
+
+function ConnectionScreen() {
+  return (
+    <motion.div
+      key="conn-screen"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0, scale: 1.05, filter: "blur(12px)" }}
+      transition={{ duration: 0.5 }}
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-cyber-950"
+    >
+      <div className="grid-bg absolute inset-0 opacity-30" />
+      <div className="relative">
+        {/* radar sweep */}
+        <div className="radar-sweep w-48 h-48 rounded-full border border-cyber-neon/20 flex items-center justify-center">
+          <div className="w-32 h-32 rounded-full border border-cyber-neon/10 flex items-center justify-center">
+            <div className="w-16 h-16 rounded-full border border-cyber-neon/30 flex items-center justify-center">
+              <Radio size={24} className="text-cyber-neon animate-pulse" />
+            </div>
+          </div>
+        </div>
+        {/* animated dots */}
+        {[0, 1, 2, 3, 4, 5].map((i) => (
+          <motion.div
+            key={i}
+            className="absolute w-1.5 h-1.5 bg-cyber-neon/60 rounded-full"
+            style={{
+              top: `${50 + 42 * Math.sin((i * Math.PI * 2) / 6)}%`,
+              left: `${50 + 42 * Math.cos((i * Math.PI * 2) / 6)}%`,
+            }}
+            animate={{ opacity: [0.2, 1, 0.2], scale: [0.8, 1.2, 0.8] }}
+            transition={{ duration: 2, repeat: Infinity, delay: i * 0.3 }}
+          />
+        ))}
+      </div>
+      <motion.p
+        className="mt-8 text-sm text-cyber-400 tracking-widest uppercase"
+        animate={{ opacity: [0.4, 1, 0.4] }}
+        transition={{ duration: 2, repeat: Infinity }}
+      >
+        Searching for Engine…
+      </motion.p>
+    </motion.div>
+  );
+}
+
+function ArcGauge({ value, max = 32 }: { value: number; max?: number }) {
+  const pct = Math.min(value / max, 1);
+  const r = 40, cx = 50, cy = 50;
+  const startAngle = 135, endAngle = 405;
+  const sweep = endAngle - startAngle;
+  const activeAngle = startAngle + sweep * pct;
+
+  const polarToCart = (a: number) => ({
+    x: cx + r * Math.cos((a * Math.PI) / 180),
+    y: cy + r * Math.sin((a * Math.PI) / 180),
+  });
+
+  const bgStart = polarToCart(startAngle);
+  const bgEnd = polarToCart(endAngle);
+  const arcStart = polarToCart(startAngle);
+  const arcEnd = polarToCart(activeAngle);
+
+  const bgD = `M ${bgStart.x} ${bgStart.y} A ${r} ${r} 0 1 1 ${bgEnd.x} ${bgEnd.y}`;
+  const arcD = `M ${arcStart.x} ${arcStart.y} A ${r} ${r} 0 ${sweep * pct > 180 ? 1 : 0} 1 ${arcEnd.x} ${arcEnd.y}`;
+
+  const color = pct > 0.6 ? "#22d3ee" : pct > 0.25 ? "#fbbf24" : "#f87171";
+  const isCritical = value < 5;
+
+  return (
+    <div className="flex flex-col items-center">
+      <svg viewBox="0 0 100 100" className={`w-28 h-28 ${isCritical ? "critical-pulse" : ""}`}>
+        <path d={bgD} fill="none" stroke="#1e293b" strokeWidth="6" strokeLinecap="round" />
+        <motion.path
+          d={arcD}
+          fill="none"
+          stroke={color}
+          strokeWidth="6"
+          strokeLinecap="round"
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 0.6, ease: "easeOut" }}
+        />
+        <text x={cx} y={cy - 2} textAnchor="middle" fill="white" fontSize="18" fontWeight="bold" fontFamily="var(--font-mono)">
+          {value}
+        </text>
+        <text x={cx} y={cy + 12} textAnchor="middle" fill="#6b7280" fontSize="8">
+          / {max}
+        </text>
+      </svg>
+    </div>
+  );
+}
+
+function MiniSparkline({ data, color = "#22d3ee" }: { data: number[]; color?: string }) {
+  if (data.length < 2) return null;
+  const chartData = data.map((v, i) => ({ i, v }));
+  return (
+    <div className="h-8 w-full mt-1 opacity-60">
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={chartData} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+          <defs>
+            <linearGradient id={`spark-${color.replace("#", "")}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity={0.4} />
+              <stop offset="100%" stopColor={color} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <Area type="monotone" dataKey="v" stroke={color} strokeWidth={1.5} fill={`url(#spark-${color.replace("#", "")})`} dot={false} isAnimationActive={false} />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 3500);
+    return () => clearTimeout(t);
+  }, [onDismiss]);
+
+  const borderColor = toast.type === "success" ? "border-cyber-emerald/60" : toast.type === "warning" ? "border-amber-500/60" : "border-cyber-neon/60";
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, x: 80, scale: 0.9 }}
+      animate={{ opacity: 1, x: 0, scale: 1 }}
+      exit={{ opacity: 0, x: 80, scale: 0.9 }}
+      className={`px-4 py-2.5 rounded-lg bg-cyber-900/90 backdrop-blur border text-xs text-cyber-300 font-mono shadow-lg ${borderColor}`}
+    >
+      {toast.message}
+    </motion.div>
+  );
 }
 
 function App() {
